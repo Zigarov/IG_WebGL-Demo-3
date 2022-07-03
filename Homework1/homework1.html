@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>homework1 Pignata Giovanni 1913547</title>
+		<style>
+			body {
+				background-color: black;
+				color: white;
+			}
+		</style>
+	</head>
+	<body>
+		<canvas id="gl-canvas" width="800" height="600"> </canvas>
+		<img id = "texImage" src = "wood.jpg" hidden></img>
+		<select name="shading" id="shading">
+			<option value="0">Fragment Shading</option>
+			<option value="1">Vertex Shading</option>
+		</select>
+		<button type="button" id="btnTex" title = "OFF">TEX ON/OFF</button>
+		<br>
+		<br>
+		<label for="Axis">Rotation Axis:</label>
+		<select name="Axis" id="Axis">
+			<option value="0">X</option>
+			<option value="1">Y</option>
+			<option value="2">Z</option>
+		</select>
+		<label for="direction">Rotation direction:</label>
+		<input type="range" id="direction" min="-1" max="1" step="1" value="0"/>
+		<br><br>
+		Viewing Volume settings:
+		<br>
+		<label for="fovySlider"> fov [10, 120]:</label>
+		<input type="range" id="fovySlider" min="0" max="120" step="5" value="60"/>
+		<label for="zNearSlider"> zNear [1, 10]:</label>
+		<input type="range" id="zNearSlider" min="1" max="10" step="0.5" value="5"/>
+		<label for="zFarSlider"> zFar [10, 100]:</label>
+		<input type="range" id="zFarSlider" min="10" max="100" step="1" value="50"/>
+		<br><br>
+		Camera Position Settings:
+		<br>
+		<label for="xCam"> xCamera [-10, 10]:</label>
+		<input type="range" id="xCam" min="-10" max="10" step="1" value="0"/>
+		<label for="yCam"> yCamera [0, 25]:</label>
+		<input type="range" id="yCam" min="0" max="25" step="1" value="25"/>
+		<label for="zCam"> zCamera [-25,25]:</label>
+		<input type="range" id="zCam" min="-25" max="25" step="1" value="5"/>
+		<br><br>
+		SpotLightProperties:   
+		<button type="button" id="btnLight" title = "OFF">ON/OFF</button>
+		<br> 
+		<label for="lightAngle"> Cut-off Angle [0, 90]:</label>
+		<input type="range" id="lightAngle" min="0" max="90" step="1" value="30"/>
+		<br>
+		<label for="xDirection"> xDirection [-10,10]:</label>
+		<input type="range" id="xDirection" min="-10" max="10" step="1" value="0"/>
+		<label for="yDirection"> Height [0,50]:</label>
+		<input type="range" id="yDirection" min="0" max="50" step="1" value="25"/>
+		<label for="zDirection"> zDirection [-10,10] :</label>
+		<input type="range" id="zDirection" min="-10" max="10" step="1" value="0"/>
+		<br><br>
+		
+		<script id="vertex-shader" type="x-shader/x-vertex">
+		#version 300 es
+
+		struct SpotLightProperties {
+			bool enabled;
+			vec4 position;
+			//vec3 position;
+			//vec3 direction;
+			vec4 direction;
+			float threshold;
+			float attenuationConstant;
+			float attenuationLinear;
+			float attenuationQuadratic;
+		};
+
+		struct MaterialProperties {
+				vec4 ambientProduct;
+				vec4 diffuseProduct;
+				vec4 specularProduct;
+				vec4 emissive;     // emissiveColor.a is alpha for the fragment
+				float shininess;
+			};
+
+		in vec4 aPosition;		
+		in vec3 aNormal;
+		in vec3 aTangent;   
+		in vec2 aTexCoord;                              
+		out vec4 vColor;
+		out vec2 vTexCoord;
+		out vec3 L,V,N,D;		
+
+		uniform mat4 uModelViewMatrix;
+		uniform mat4 uProjectionMatrix;    
+		uniform mat3 uNormalMatrix;               //
+		uniform mat4 uTransformMatrix;
+		uniform MaterialProperties uMaterial;
+		uniform SpotLightProperties uSpotLight;
+		uniform bool uVertexShading;
+		uniform bool uTexOn;
+
+		void main() {
+			gl_Position = uProjectionMatrix * uTransformMatrix * aPosition;
+			vec4 color = uMaterial.emissive;
+			vTexCoord = aTexCoord;
+			
+			if (uSpotLight.enabled) {
+				vec3 position = (uTransformMatrix * aPosition).xyz;
+				vec3 n = normalize(uNormalMatrix*aNormal);
+				vec3 t = normalize(uNormalMatrix*aTangent);
+				vec3 b = cross(n, t);
+
+				vec3 lightPosition = (uModelViewMatrix * uSpotLight.position).xyz;
+				L = (lightPosition - position);
+				D = (uModelViewMatrix * uSpotLight.direction).xyz;
+				V = normalize(-position); 
+				N = (uModelViewMatrix * vec4(aNormal,0)).xyz; 
+
+				if(uVertexShading) {
+					float a = uSpotLight.attenuationConstant;
+					float dist2 = (dot(L,L));
+					float dist = sqrt(dist2);
+					a += (uSpotLight.attenuationLinear*dist) + (uSpotLight.attenuationQuadratic * dist2);
+
+					vec4 ambient = uMaterial.ambientProduct/a;
+					vec4 diffuse = vec4(0.0, 0.0, 0.0, 1.0);
+					vec4 specular = vec4(0.0, 0.0, 0.0, 1.0);
+
+					L = normalize(L);
+					D = normalize(D);
+					float cos = dot(L,D);
+
+					if(cos >= uSpotLight.threshold) {						
+						N = normalize(N);
+						V = normalize(V);
+		
+						float kd = max(dot(L, N), 0.0);
+						diffuse = (kd/a) * uMaterial.diffuseProduct;
+	
+						if (dot(L,N) >= 0.0) {
+							vec3 H = normalize(L + V);  
+							float ks = pow(max(dot(N,H),0.0), uMaterial.shininess);
+							specular = (ks/a) * uMaterial.specularProduct;
+						} 
+					}	
+					color = color + ambient + diffuse + specular;
+					color.a = uMaterial.emissive.a;
+				}
+			}
+			vColor = color;
+		}
+		</script>
+
+		<script id="fragment-shader" type="x-shader/x-fragment">
+		#version 300 es
+		precision highp float;
+
+		struct SpotLightProperties {
+			bool enabled;
+			vec4 position;
+			//vec3 position;
+			//vec3 direction;
+			vec4 direction;
+			float threshold;
+			float attenuationConstant;
+			float attenuationLinear;
+			float attenuationQuadratic;
+		};
+
+		struct MaterialProperties {
+			vec4 ambientProduct;
+			vec4 diffuseProduct;
+			vec4 specularProduct;
+			vec4 emissive;     // emissiveColor.a is alpha for the fragment
+			float shininess;
+		};
+
+		in vec4 vColor;
+		in vec2 vTexCoord;
+		in vec3, L,N,V,D;
+
+		uniform bool uVertexShading;
+		uniform bool uTexOn;
+		uniform MaterialProperties uMaterial;
+		uniform SpotLightProperties uSpotLight;
+		uniform sampler2D uTexMap;
+	 
+
+		out vec4 fColor;
+
+		void main() {
+				vec4 color = vColor;
+
+				if((!uVertexShading)&&(uSpotLight.enabled)) {
+					vec3 n; 
+					n = normalize(N);
+					vec3 v = normalize(V);
+					vec3 l = normalize(L);
+					vec3 d = normalize(D);
+					float dl = dot(l,d);
+
+					float a = uSpotLight.attenuationConstant;
+					float dist2 = (dot(L,L));
+					a +=  (uSpotLight.attenuationQuadratic * dist2);
+					float dist = sqrt(dist2);
+					a += (uSpotLight.attenuationLinear*dist);
+
+					vec4 ambient = uMaterial.ambientProduct/a;
+					vec4 specular = vec4(0.0, 0.0, 0.0, 1.0);
+					vec4 diffuse = vec4(0.0, 0.0, 0.0, 1.0);
+										
+					if (dl > uSpotLight.threshold) {
+						float kd = max(dot(l,n), 0.0);
+						diffuse = kd/a * uMaterial.diffuseProduct;
+		
+						if (dot(l,n) >= 0.0) {
+							vec3 h = normalize(l+v);  
+							float ks = pow(max(dot(n,h),0.0), uMaterial.shininess);
+							specular = ks/a * uMaterial.specularProduct;
+						} 
+					}
+					color = color + ambient + diffuse + specular;
+				}
+				color.a = uMaterial.emissive.a;
+				if (uTexOn) {
+					fColor = color * texture(uTexMap, vTexCoord);
+				}
+				else {
+					fColor = color;
+				}
+		}
+		</script>
+
+		<script src="../Common/initShaders.js"></script>
+		<script src="../Common/MV.js"></script>
+		<script src="homework1.js"></script>
+	</body>
+</html>
